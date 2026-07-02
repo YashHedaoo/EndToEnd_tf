@@ -1,0 +1,9 @@
+framework:
+  - terraform
+quiet: false
+soft-fail: false
+verbose: true
+output: cli
+# Exclude checks globally if required, though inline comments are preferred
+# skip-check:
+#   - CKV_AWS_111 # IAM policy wildcard writes

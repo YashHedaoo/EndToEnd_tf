@@ -1,0 +1,11 @@
+# Example remote backend configuration for team collaboration and state locking in production.
+# To use this, rename the file to backend.tf and customize the values.
+# terraform {
+#   backend "s3" {
+#     bucket         = "my-ecs-monitoring-tfstate"
+#     key            = "terraform.tfstate"
+#     region         = "us-east-1"
+#     dynamodb_table = "terraform-lock-table"
+#     encrypt        = true
+#   }
+# }
