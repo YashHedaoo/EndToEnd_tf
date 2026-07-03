@@ -57,7 +57,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
+      - name: Stage 1 - Login to AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -69,10 +69,22 @@ jobs:
         with:
           terraform_version: 1.7.0
 
-      - name: Deploy OneAgent
+      - name: Stage 2 - Deploy Base Infrastructure
         env:
           TF_VAR_dynatrace_url: ${{ secrets.DYNATRACE_URL }}
           TF_VAR_dynatrace_paas_token: ${{ secrets.DYNATRACE_PAAS_TOKEN }}
         run: |
           terraform init
           terraform apply -auto-approve -no-color
+
+      - name: Install Python Dependencies
+        run: pip install boto3
+
+      - name: Stage 3 & 4 - Collect, Observe & Deploy OneAgent
+        env:
+          ENVIRONMENT: "production"
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          ONEAGENT_TASK_DEFINITION_ARN=$(terraform output -raw oneagent_task_definition_arn)
+          export ONEAGENT_TASK_DEFINITION_ARN
+          python3 .github/scripts/auto_observe.py
