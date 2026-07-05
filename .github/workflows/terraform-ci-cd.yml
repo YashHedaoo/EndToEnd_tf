@@ -128,3 +128,5 @@ jobs:
             CLUSTER_ARG="--cluster ${{ steps.check_clusters.outputs.cluster_name }}"
           fi
           python3 .github/scripts/manage_oneagent.py --install $CLUSTER_ARG
+
+          
