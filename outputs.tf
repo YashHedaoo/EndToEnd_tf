@@ -1,6 +1,6 @@
 output "vpc_id" {
   description = "The ID of the created VPC"
-  value       = module.networking.vpc_id
+  value       = var.is_new_project ? module.networking[0].vpc_id : null
 }
 
 output "ecs_cluster_name" {
@@ -10,7 +10,7 @@ output "ecs_cluster_name" {
 
 output "auto_observability_lambda_arn" {
   description = "The ARN of the Lambda Auto-Observability Controller"
-  value       = module.auto_observability.lambda_function_arn
+  value       = var.enable_auto_observability ? module.auto_observability[0].lambda_function_arn : null
 }
 
 output "api_url_secret_arn" {

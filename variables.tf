@@ -29,20 +29,20 @@ variable "environment" {
 
 variable "cluster_name" {
   type        = string
-  description = "The name of the ECS cluster to create"
+  description = "The name of the ECS cluster (to create if is_new_project is true, or the existing cluster name if false)"
   default     = "ecs-oneagent-cluster"
 }
 
-variable "create_cluster" {
+variable "is_new_project" {
   type        = bool
-  description = "Whether to create a new cluster or reference an existing one"
+  description = "Whether this is a completely new project (creates new VPC, cluster, and EC2 capacity) or an existing project (deploys OneAgent onto an existing cluster)"
   default     = true
 }
 
-variable "existing_cluster_id" {
-  type        = string
-  description = "The ID of the existing ECS cluster (required if create_cluster = false)"
-  default     = ""
+variable "enable_auto_observability" {
+  type        = bool
+  description = "Whether to enable the Lambda-based region-wide auto-observability scanner"
+  default     = false
 }
 
 variable "instance_type" {
@@ -71,3 +71,23 @@ variable "tags" {
     Project   = "Dynatrace-ECS-OneAgent-Daemon"
   }
 }
+
+variable "monitored_clusters" {
+  type        = list(string)
+  description = "List of ECS cluster names where Dynatrace OneAgent should be deployed. Use ['*'] to monitor all clusters."
+  default     = ["*"]
+}
+
+variable "oneagent_installer_script_url" {
+  type        = string
+  description = "The Dynatrace OneAgent installer script URL (e.g., https://<env-id>.live.dynatrace.com/api/v1/deployment/installer/...)"
+  sensitive   = true
+  default     = ""
+}
+
+variable "project_tag_value" {
+  type        = string
+  description = "The value of the Project tag to assign to the new resources (e.g. electricity.com)"
+  default     = ""
+}
+

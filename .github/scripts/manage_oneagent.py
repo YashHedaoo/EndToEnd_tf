@@ -3,7 +3,25 @@ import sys
 import argparse
 import boto3
 
-def get_clusters(ecs):
+def get_clusters(ecs, tag_key=None, tag_value=None):
+    if tag_key and tag_value:
+        print(f"[INFO] Querying Resource Groups Tagging API for ECS clusters with tag: {tag_key}={tag_value}")
+        try:
+            client = boto3.client('resourcegroupstaggingapi')
+            paginator = client.get_paginator('get_resources')
+            cluster_arns = []
+            for page in paginator.paginate(
+                TagFilters=[{'Key': tag_key, 'Values': [tag_value]}],
+                ResourceTypeFilters=['ecs:cluster']
+            ):
+                for resource in page.get('ResourceTagMappingList', []):
+                    cluster_arns.append(resource['ResourceARN'])
+            print(f"[INFO] Found {len(cluster_arns)} ECS cluster(s) with tag: {tag_key}={tag_value}")
+            return cluster_arns
+        except Exception as e:
+            print(f"[ERROR] Failed to query Resource Groups Tagging API: {e}")
+            print("[INFO] Falling back to listing all clusters in region...")
+
     paginator = ecs.get_paginator('list_clusters')
     cluster_arns = []
     for page in paginator.paginate():
@@ -14,6 +32,9 @@ def main():
     parser = argparse.ArgumentParser(description="Manage Dynatrace OneAgent on ECS Clusters")
     parser.add_argument('--observe', action='store_true', help="Collect clusters and observe OneAgent status (installed / not installed)")
     parser.add_argument('--install', action='store_true', help="Install OneAgent in clusters who don't have it")
+    parser.add_argument('--cluster', help="Specify a target ECS cluster name to restrict action to")
+    parser.add_argument('--tag-key', help="AWS Tag key to filter clusters by (fallback: PROJECT_TAG_KEY env var)")
+    parser.add_argument('--tag-value', help="AWS Tag value to filter clusters by (fallback: PROJECT_TAG_VALUE env var)")
     args = parser.parse_args()
 
     ecs = boto3.client('ecs')
@@ -22,17 +43,23 @@ def main():
     oneagent_arn = os.environ.get('ONEAGENT_TASK_DEFINITION_ARN')
     service_name = f"dynatrace-oneagent-{environment}"
 
+    # Read tags from arguments or environment
+    tag_key = args.tag_key or os.environ.get('PROJECT_TAG_KEY')
+    tag_value = args.tag_value or os.environ.get('PROJECT_TAG_VALUE')
+
     if args.observe:
         print("=== [STAGE] COLLECTING CLUSTERS & OBSERVING INSTALLED STATUS ===")
         try:
-            cluster_arns = get_clusters(ecs)
-            print(f"[INFO] Found {len(cluster_arns)} ECS cluster(s) in region.\n")
+            cluster_arns = get_clusters(ecs, tag_key=tag_key, tag_value=tag_value)
+            print(f"[INFO] Scanning {len(cluster_arns)} ECS cluster(s).\n")
         except Exception as e:
-            print(f"[ERROR] Failed to list ECS clusters: {e}")
+            print(f"[ERROR] Failed to obtain ECS clusters: {e}")
             sys.exit(1)
 
         for cluster_arn in cluster_arns:
             cluster_name = cluster_arn.split('/')[-1]
+            if args.cluster and cluster_name != args.cluster:
+                continue
             try:
                 srv_paginator = ecs.get_paginator('list_services')
                 service_arns = []
@@ -54,13 +81,15 @@ def main():
             sys.exit(1)
 
         try:
-            cluster_arns = get_clusters(ecs)
+            cluster_arns = get_clusters(ecs, tag_key=tag_key, tag_value=tag_value)
         except Exception as e:
-            print(f"[ERROR] Failed to list ECS clusters: {e}")
+            print(f"[ERROR] Failed to obtain ECS clusters: {e}")
             sys.exit(1)
 
         for cluster_arn in cluster_arns:
             cluster_name = cluster_arn.split('/')[-1]
+            if args.cluster and cluster_name != args.cluster:
+                continue
             try:
                 srv_paginator = ecs.get_paginator('list_services')
                 service_arns = []

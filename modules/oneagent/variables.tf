@@ -61,3 +61,16 @@ variable "tags" {
   description = "Tags to apply to all resources"
   default     = {}
 }
+
+variable "oneagent_installer_script_url" {
+  type        = string
+  description = "The Dynatrace OneAgent installer script URL"
+  default     = ""
+}
+
+variable "create_service" {
+  type        = bool
+  description = "Whether to create the ECS service for OneAgent"
+  default     = true
+}
+

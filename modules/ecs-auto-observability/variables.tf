@@ -23,3 +23,9 @@ variable "tags" {
   description = "Tags to apply to all resources"
   default     = {}
 }
+
+variable "monitored_clusters" {
+  type        = list(string)
+  description = "List of ECS cluster names where Dynatrace OneAgent should be deployed."
+}
+

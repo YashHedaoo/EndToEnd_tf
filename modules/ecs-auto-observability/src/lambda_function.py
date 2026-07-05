@@ -20,6 +20,10 @@ def lambda_handler(event, context):
         logger.error("ONEAGENT_TASK_DEFINITION_ARN environment variable is not defined.")
         return {"status": "error", "message": "ONEAGENT_TASK_DEFINITION_ARN not defined"}
 
+    # Retrieve and parse monitored clusters whitelist
+    monitored_clusters_raw = os.environ.get('MONITORED_CLUSTERS', '*')
+    monitored_clusters = [c.strip() for c in monitored_clusters_raw.split(',') if c.strip()]
+
     try:
         # 1. Discover all ECS clusters in the targeted region
         paginator = ecs_client.get_paginator('list_clusters')
@@ -32,6 +36,12 @@ def lambda_handler(event, context):
         # 2. Iterate through each cluster to verify OneAgent Daemon service
         for cluster_arn in cluster_arns:
             cluster_name = cluster_arn.split('/')[-1]
+            
+            # Check whitelist matching
+            if '*' not in monitored_clusters and cluster_name not in monitored_clusters:
+                logger.info(f"Cluster {cluster_name} is not in MONITORED_CLUSTERS whitelist. Skipping Dynatrace OneAgent installation.")
+                continue
+
             logger.info(f"Checking cluster: {cluster_name}")
 
             # List all services inside the cluster
