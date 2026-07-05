@@ -58,15 +58,24 @@ jobs:
         env:
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
         run: |
+          # ANSI colors
+          BLUE='\033[94m'
+          GREEN='\033[92m'
+          YELLOW='\033[93m'
+          RESET='\033[0m'
+          
           TAG_KEY="${{ github.event.inputs.project_tag_key || secrets.PROJECT_TAG_KEY || 'Project' }}"
           TAG_VALUE="${{ github.event.inputs.project_tag_value || secrets.PROJECT_TAG_VALUE }}"
           
           if [ -z "${TAG_VALUE}" ]; then
-            echo "[INFO] No project tag specified. Proceeding with user cluster inputs."
+            echo -e "ℹ️ ${BLUE}[INFO]${RESET} No project tag specified. Proceeding with user cluster inputs."
             echo "create_cluster=${{ github.event.inputs.is_new_project || 'true' }}" >> $GITHUB_OUTPUT
             echo "cluster_name=${{ github.event.inputs.cluster_name || 'ecs-oneagent-cluster' }}" >> $GITHUB_OUTPUT
           else
-            echo "[INFO] Querying AWS Resource Groups Tagging API for tag: ${TAG_KEY}=${TAG_VALUE}"
+            echo "::group::🔍 Querying AWS Resource Groups Tagging API"
+            echo -e "ℹ️ ${BLUE}[INFO]${RESET} Tag Key:   ${TAG_KEY}"
+            echo -e "ℹ️ ${BLUE}[INFO]${RESET} Tag Value: ${TAG_VALUE}"
+            
             CLUSTERS=$(aws resourcegroupstaggingapi get-resources \
               --tag-filters "Key=${TAG_KEY},Values=${TAG_VALUE}" \
               --resource-type-filters "ecs:cluster" \
@@ -74,18 +83,21 @@ jobs:
               --output text)
             
             if [ -z "${CLUSTERS}" ]; then
-              echo "[INFO] No clusters found for project tag: ${TAG_KEY}=${TAG_VALUE}. Will create a new cluster."
+              echo -e "⚠️ ${YELLOW}[WARNING]${RESET} No clusters found for tag: ${TAG_KEY}=${TAG_VALUE}."
+              echo -e "ℹ️ ${BLUE}[INFO]${RESET} Will create a new cluster."
               echo "create_cluster=true" >> $GITHUB_OUTPUT
               CLEAN_NAME=$(echo "${TAG_VALUE}" | tr '.' '-' | tr -cd '[:alnum:]_-')
               echo "cluster_name=${CLEAN_NAME}-cluster" >> $GITHUB_OUTPUT
             else
-              echo "[INFO] Found existing cluster(s) for project tag."
+              echo -e "✅ ${GREEN}[SUCCESS]${RESET} Found existing cluster(s) matching the tag."
               echo "create_cluster=false" >> $GITHUB_OUTPUT
               
               FIRST_ARN=$(echo $CLUSTERS | awk '{print $1}')
               CLUSTER_NAME=$(echo $FIRST_ARN | awk -F/ '{print $NF}')
+              echo -e "ℹ️ ${BLUE}[INFO]${RESET} Target cluster name resolved to: ${CLUSTER_NAME}"
               echo "cluster_name=${CLUSTER_NAME}" >> $GITHUB_OUTPUT
             fi
+            echo "::endgroup::"
           fi
 
       - name: Deploy Base Infrastructure (TF)
@@ -96,11 +108,30 @@ jobs:
           TF_VAR_cluster_name: ${{ steps.check_clusters.outputs.cluster_name }}
           TF_VAR_project_tag_value: ${{ github.event.inputs.project_tag_value || secrets.PROJECT_TAG_VALUE }}
         run: |
-          terraform init
+          # ANSI colors
+          BLUE='\033[94m'
+          GREEN='\033[92m'
+          RESET='\033[0m'
+          
+          echo -e "🚀 ${BLUE}[DEPLOY]${RESET} Deploying base Terraform infrastructure..."
+          echo -e "   - Target ECS Cluster: ${{ steps.check_clusters.outputs.cluster_name }}"
+          echo -e "   - Create New Cluster: ${{ steps.check_clusters.outputs.create_cluster }}"
+          
+          echo "::group::⚙️ Terraform Init"
+          terraform init -no-color
+          echo "::endgroup::"
+          
+          echo "::group::⚡ Terraform Apply"
           terraform apply -auto-approve -no-color
+          echo "::endgroup::"
+          
+          echo -e "✅ ${GREEN}[SUCCESS]${RESET} Base infrastructure successfully deployed!"
 
       - name: Install Python Dependencies
-        run: pip install boto3
+        run: |
+          echo "::group::📦 Installing Pip Dependencies"
+          pip install boto3
+          echo "::endgroup::"
 
       - name: Collecting and Observing Clusters
         env:
@@ -121,13 +152,18 @@ jobs:
           PROJECT_TAG_KEY: ${{ github.event.inputs.project_tag_key || secrets.PROJECT_TAG_KEY || 'Project' }}
           PROJECT_TAG_VALUE: ${{ github.event.inputs.project_tag_value || secrets.PROJECT_TAG_VALUE }}
         run: |
+          # ANSI colors
+          BLUE='\033[94m'
+          RESET='\033[0m'
+          
+          echo -e "ℹ️ ${BLUE}[INFO]${RESET} Retrieving OneAgent task definition ARN from Terraform output..."
           ONEAGENT_TASK_DEFINITION_ARN=$(terraform output -raw oneagent_task_definition_arn)
           export ONEAGENT_TASK_DEFINITION_ARN
+          
           CLUSTER_ARG=""
           if [ -z "${PROJECT_TAG_VALUE}" ]; then
             CLUSTER_ARG="--cluster ${{ steps.check_clusters.outputs.cluster_name }}"
           fi
           python3 .github/scripts/manage_oneagent.py --install $CLUSTER_ARG
-
 
           

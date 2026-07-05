@@ -3,9 +3,51 @@ import sys
 import argparse
 import boto3
 
+class Logger:
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    BLUE = '\033[94m'
+    BOLD = '\033[1m'
+    RESET = '\033[0m'
+
+    @staticmethod
+    def info(msg):
+        print(f"ℹ️ {Logger.BLUE}[INFO]{Logger.RESET} {msg}")
+
+    @staticmethod
+    def success(msg):
+        print(f"✅ {Logger.GREEN}[SUCCESS]{Logger.RESET} {msg}")
+
+    @staticmethod
+    def warning(msg):
+        print(f"⚠️ {Logger.YELLOW}[WARNING]{Logger.RESET} {msg}")
+
+    @staticmethod
+    def error(msg):
+        print(f"❌ {Logger.RED}[ERROR]{Logger.RESET} {msg}", file=sys.stderr)
+
+    @staticmethod
+    def stage(msg):
+        print(f"\n{Logger.BOLD}🚀 {msg}{Logger.RESET}")
+
+    @staticmethod
+    def start_group(name):
+        if os.environ.get('GITHUB_ACTIONS') == 'true':
+            print(f"::group::📁 {name}")
+        else:
+            print(f"\n--- 📁 {name} ---")
+
+    @staticmethod
+    def end_group():
+        if os.environ.get('GITHUB_ACTIONS') == 'true':
+            print("::endgroup::")
+        else:
+            print("-" * 40)
+
 def get_clusters(ecs, tag_key=None, tag_value=None):
     if tag_key and tag_value:
-        print(f"[INFO] Querying Resource Groups Tagging API for ECS clusters with tag: {tag_key}={tag_value}")
+        Logger.info(f"Querying Resource Groups Tagging API for ECS clusters with tag: {tag_key}={tag_value}")
         try:
             client = boto3.client('resourcegroupstaggingapi')
             paginator = client.get_paginator('get_resources')
@@ -16,11 +58,11 @@ def get_clusters(ecs, tag_key=None, tag_value=None):
             ):
                 for resource in page.get('ResourceTagMappingList', []):
                     cluster_arns.append(resource['ResourceARN'])
-            print(f"[INFO] Found {len(cluster_arns)} ECS cluster(s) with tag: {tag_key}={tag_value}")
+            Logger.info(f"Found {len(cluster_arns)} ECS cluster(s) with tag: {tag_key}={tag_value}")
             return cluster_arns
         except Exception as e:
-            print(f"[ERROR] Failed to query Resource Groups Tagging API: {e}")
-            print("[INFO] Falling back to listing all clusters in region...")
+            Logger.error(f"Failed to query Resource Groups Tagging API: {e}")
+            Logger.info("Falling back to listing all clusters in region...")
 
     paginator = ecs.get_paginator('list_clusters')
     cluster_arns = []
@@ -48,18 +90,20 @@ def main():
     tag_value = args.tag_value or os.environ.get('PROJECT_TAG_VALUE')
 
     if args.observe:
-        print("=== [STAGE] COLLECTING CLUSTERS & OBSERVING INSTALLED STATUS ===")
+        Logger.stage("COLLECTING CLUSTERS & OBSERVING INSTALLED STATUS")
         try:
             cluster_arns = get_clusters(ecs, tag_key=tag_key, tag_value=tag_value)
-            print(f"[INFO] Scanning {len(cluster_arns)} ECS cluster(s).\n")
+            Logger.info(f"Scanning {len(cluster_arns)} ECS cluster(s).\n")
         except Exception as e:
-            print(f"[ERROR] Failed to obtain ECS clusters: {e}")
+            Logger.error(f"Failed to obtain ECS clusters: {e}")
             sys.exit(1)
 
         for cluster_arn in cluster_arns:
             cluster_name = cluster_arn.split('/')[-1]
             if args.cluster and cluster_name != args.cluster:
                 continue
+            
+            Logger.start_group(f"Inspecting Cluster: {cluster_name}")
             try:
                 srv_paginator = ecs.get_paginator('list_services')
                 service_arns = []
@@ -68,28 +112,31 @@ def main():
                 
                 has_oneagent = any(arn.split('/')[-1] == service_name for arn in service_arns)
                 if has_oneagent:
-                    print(f"[*] Cluster Name: '{cluster_name}' -> STATUS: Dynatrace OneAgent INSTALLED")
+                    Logger.success(f"Cluster '{cluster_name}' -> STATUS: Dynatrace OneAgent is INSTALLED")
                 else:
-                    print(f"[*] Cluster Name: '{cluster_name}' -> STATUS: Dynatrace OneAgent NOT INSTALLED")
+                    Logger.warning(f"Cluster '{cluster_name}' -> STATUS: Dynatrace OneAgent is NOT INSTALLED")
             except Exception as e:
-                print(f"[ERROR] Failed to inspect cluster '{cluster_name}': {e}")
+                Logger.error(f"Failed to inspect cluster '{cluster_name}': {e}")
+            Logger.end_group()
 
     elif args.install:
-        print("=== [STAGE] INSTALLING ONEAGENT IN CLUSTERS LACKING IT ===")
+        Logger.stage("INSTALLING ONEAGENT IN CLUSTERS LACKING IT")
         if not oneagent_arn:
-            print("[ERROR] ONEAGENT_TASK_DEFINITION_ARN environment variable is missing.")
+            Logger.error("ONEAGENT_TASK_DEFINITION_ARN environment variable is missing.")
             sys.exit(1)
 
         try:
             cluster_arns = get_clusters(ecs, tag_key=tag_key, tag_value=tag_value)
         except Exception as e:
-            print(f"[ERROR] Failed to obtain ECS clusters: {e}")
+            Logger.error(f"Failed to obtain ECS clusters: {e}")
             sys.exit(1)
 
         for cluster_arn in cluster_arns:
             cluster_name = cluster_arn.split('/')[-1]
             if args.cluster and cluster_name != args.cluster:
                 continue
+            
+            Logger.start_group(f"Processing Cluster: {cluster_name}")
             try:
                 srv_paginator = ecs.get_paginator('list_services')
                 service_arns = []
@@ -98,7 +145,7 @@ def main():
                 
                 has_oneagent = any(arn.split('/')[-1] == service_name for arn in service_arns)
                 if not has_oneagent:
-                    print(f"[ACTION] Cluster '{cluster_name}' lacks OneAgent. Installing...")
+                    Logger.info(f"Cluster '{cluster_name}' lacks OneAgent. Starting deployment...")
                     ecs.create_service(
                         cluster=cluster_arn,
                         serviceName=service_name,
@@ -106,11 +153,12 @@ def main():
                         schedulingStrategy='DAEMON',
                         launchType='EC2'
                     )
-                    print(f"[SUCCESS] Scheduled Dynatrace OneAgent daemon service on cluster '{cluster_name}'")
+                    Logger.success(f"Scheduled Dynatrace OneAgent daemon service on cluster '{cluster_name}'")
                 else:
-                    print(f"[SKIP] Cluster '{cluster_name}' already has OneAgent. Skipping installation.")
+                    Logger.info(f"Cluster '{cluster_name}' already has OneAgent. Skipping installation.")
             except Exception as e:
-                print(f"[ERROR] Failed to deploy on cluster '{cluster_name}': {e}")
+                Logger.error(f"Failed to deploy on cluster '{cluster_name}': {e}")
+            Logger.end_group()
 
     else:
         parser.print_help()
